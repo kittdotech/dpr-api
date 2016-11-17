@@ -11,7 +11,7 @@ from mock import patch
 
 from app import create_app
 from app.database import db
-from app.mod_api.models import User, MetaDataDB, Publisher
+from app.mod_api.models import User, MetaDataDB
 
 
 class AuthTokenTestCase(unittest.TestCase):
@@ -25,7 +25,7 @@ class AuthTokenTestCase(unittest.TestCase):
             db.create_all()
             self.user = User()
             self.user.user_id = 'trial_id'
-            self.user.email, self.user.name, self.user.secret = \
+            self.user.email, self.user.user_name, self.user.secret = \
                 'test@test.com', 'test_user', 'super_secret'
             db.session.add(self.user)
             db.session.commit()
@@ -145,8 +145,8 @@ class GetMetaDataTestCase(unittest.TestCase):
             db.create_all()
 
     def test_throw_404_if_meta_data_not_found(self):
-        response = self.client.\
-            get('/api/package/%s/%s' % (self.publisher, self.package))
+        response = self.client.get('/api/package/%s/%s'%\
+                                   (self.publisher, self.package))
         data = json.loads(response.data)
         self.assertEqual(response.status_code, 404)
         self.assertEqual(data['error_code'], 'DATA_NOT_FOUND')
@@ -154,14 +154,12 @@ class GetMetaDataTestCase(unittest.TestCase):
     def test_return_200_if_meta_data_found(self):
         descriptor = {'name': 'test description'}
         with self.app.app_context():
-            publisher = Publisher(name=self.publisher)
-            metadata = MetaDataDB(name=self.package)
+            metadata = MetaDataDB(self.package, self.publisher)
             metadata.descriptor = json.dumps(descriptor)
-            publisher.packages.append(metadata)
-            db.session.add(publisher)
+            db.session.add(metadata)
             db.session.commit()
-        response = self.client.\
-            get('/api/package/%s/%s' % (self.publisher, self.package))
+        response = self.client.get('/api/package/%s/%s'%\
+                                   (self.publisher, self.package))
         data = json.loads(response.data)
         self.assertEqual(response.status_code, 200)
         
@@ -169,12 +167,10 @@ class GetMetaDataTestCase(unittest.TestCase):
         descriptor = {'name': 'test description'}
         readme = 'README'
         with self.app.app_context():
-            publisher = Publisher(name=self.publisher)
-            metadata = MetaDataDB(name=self.package)
+            metadata = MetaDataDB(self.package, self.publisher)
             metadata.descriptor = json.dumps(descriptor)
             metadata.readme = readme
-            publisher.packages.append(metadata)
-            db.session.add(publisher)
+            db.session.add(metadata)
             db.session.commit()
         response = self.client.get('/api/package/%s/%s'%\
                                    (self.publisher, self.package))
@@ -190,11 +186,9 @@ class GetMetaDataTestCase(unittest.TestCase):
     def test_return_empty_string_if_readme_not_there(self):
         descriptor = {'name': 'test description'}
         with self.app.app_context():
-            publisher = Publisher(name=self.publisher)
-            metadata = MetaDataDB(name=self.package)
+            metadata = MetaDataDB(self.package, self.publisher)
             metadata.descriptor = json.dumps(descriptor)
-            publisher.packages.append(metadata)
-            db.session.add(publisher)
+            db.session.add(metadata)
             db.session.commit()
         response = self.client.get('/api/package/%s/%s'%\
                                    (self.publisher, self.package))
@@ -205,14 +199,11 @@ class GetMetaDataTestCase(unittest.TestCase):
     def test_return_generic_error_if_descriptor_is_not_json(self):
         descriptor = 'test description'
         with self.app.app_context():
-            publisher = Publisher(name='pub')
-            metadata = MetaDataDB(name=self.package)
+            metadata = MetaDataDB(self.package, 'pub')
             metadata.descriptor = descriptor
-            publisher.packages.append(metadata)
-            db.session.add(publisher)
+            db.session.add(metadata)
             db.session.commit()
-        response = self.client\
-            .get('/api/package/%s/%s' % ('pub', self.package))
+        response = self.client.get('/api/package/%s/%s'%('pub', self.package))
         data = json.loads(response.data)
         self.assertEqual(response.status_code, 500)
         self.assertEqual(data['error_code'], 'GENERIC_ERROR')
@@ -233,12 +224,10 @@ class GetAllMetaDataTestCase(unittest.TestCase):
         with self.app.app_context():
             db.drop_all()
             db.create_all()
-            publisher = Publisher(name=self.publisher)
-            metadata1 = MetaDataDB(name=self.package1)
-            metadata2 = MetaDataDB(name=self.package2)
-            publisher.packages.append(metadata1)
-            publisher.packages.append(metadata2)
-            db.session.add(publisher)
+            metadata1 = MetaDataDB(self.package1, self.publisher)
+            metadata2 = MetaDataDB(self.package2, self.publisher)
+            db.session.add(metadata1)
+            db.session.add(metadata2)
             db.session.commit()
 
     def test_throw_404_if_publisher_not_found(self):
@@ -298,7 +287,7 @@ class GetS3SignedUrlTestCase(unittest.TestCase):
 class FinalizeMetaDataTestCase(unittest.TestCase):
     publisher = 'test_publisher'
     package = 'test_package'
-    user_id = 1
+    user_id = 'trial_id'
     url = '/api/package/%s/%s/finalize' % (publisher, package)
     jwt_url = '/api/auth/token'
 
@@ -310,8 +299,8 @@ class FinalizeMetaDataTestCase(unittest.TestCase):
             db.drop_all()
             db.create_all()
             self.user = User()
-            self.user.id = self.user_id
-            self.user.email, self.user.name, self.user.secret = \
+            self.user.user_id = self.user_id
+            self.user.email, self.user.user_name, self.user.secret = \
                 'test@test.com', self.publisher, 'super_secret'
             db.session.add(self.user)
             db.session.commit()
@@ -376,7 +365,7 @@ class FinalizeMetaDataTestCase(unittest.TestCase):
 class SaveMetaDataTestCase(unittest.TestCase):
     publisher = 'test_publisher'
     package = 'test_package'
-    user_id = 1
+    user_id = 'trial_id'
     url = '/api/package/%s/%s' % (publisher, package)
     jwt_url = '/api/auth/token'
 
@@ -387,8 +376,8 @@ class SaveMetaDataTestCase(unittest.TestCase):
             db.drop_all()
             db.create_all()
             self.user = User()
-            self.user.id = self.user_id
-            self.user.email, self.user.name, self.user.secret = \
+            self.user.user_id = self.user_id
+            self.user.email, self.user.user_name, self.user.secret = \
                 'test@test.com', self.publisher, 'super_secret'
             db.session.add(self.user)
             db.session.commit()
@@ -416,7 +405,8 @@ class SaveMetaDataTestCase(unittest.TestCase):
         self.assertEqual(401, response.status_code)
 
         response = self.client.put(self.url,
-                                   headers=dict(Authorization='bearer 12 23'))
+                                   headers=dict(Authorization=\
+                                                 'bearer 123 231'))
         self.assertEqual(401, response.status_code)
 
     @patch('app.mod_api.models.BitStore.save')
@@ -476,14 +466,14 @@ class CallbackHandlingTestCase(unittest.TestCase):
     @patch('app.mod_api.models.User.create_or_update_user_from_callback')
     def test_return_200_if_all_right(self,
                                      get_user_with_code,
-                                     jwt_helper,
+                                     JWTHelper,
                                      create_user):
         get_user_with_code('123').side_effect = {
             'user_id': "test_id", "user_metadata": {"secr": "tt"}
             }
         response = self.client.get('/api/auth/callback?code=123')
         self.assertEqual(create_user.call_count, 1)
-        self.assertEqual(jwt_helper.call_count, 1)
+        self.assertEqual(JWTHelper.call_count, 1)
 
         self.assertEqual(response.status_code, 200)
 
@@ -514,7 +504,7 @@ class DataProxyTestCase(unittest.TestCase):
         data = response.data
         self.assertEqual(200, response.status_code)
         self.assertEqual(data, 'test_header_0,test_header_1\n'\
-                                     + 'test_value_0,test_value_3\n')
+                                     + 'test_value_0,test_value_3\n')    
 
     @patch("app.mod_api.models.BitStore.get_s3_object")
     @patch("app.mod_api.models.BitStore.build_s3_key")
@@ -527,12 +517,12 @@ class DataProxyTestCase(unittest.TestCase):
         response = self.client.get(self.url)
         data = response.data
         self.assertEqual(200, response.status_code)
-        self.assertEqual(data, '['
-                         + '{"test_header_0": "test_value_2", '
-                         + '"test_header_1": "test_value_3"},'
-                         + '{"test_header_0": "test_value_0", '
-                         + '"test_header_1": "test_value_1"}'
-                         + ']')
+        self.assertEqual(data, '['\
+                         +'{"test_header_0": "test_value_2", '\
+                         +'"test_header_1": "test_value_3"},'\
+                         +'{"test_header_0": "test_value_0", '\
+                         +'"test_header_1": "test_value_1"}'\
+                         +']')
 
     @patch("app.mod_api.models.BitStore.get_s3_object")
     @patch("app.mod_api.models.BitStore.build_s3_key")
@@ -546,7 +536,6 @@ class DataProxyTestCase(unittest.TestCase):
         self.assertEqual(500, response.status_code)
         self.assertEqual(data['message'], 'failed')
 
-
 class EndToEndTestCase(unittest.TestCase):
     auth_token_url = '/api/auth/token'
     publisher = 'test_publisher'
@@ -554,7 +543,7 @@ class EndToEndTestCase(unittest.TestCase):
     meta_data_url = '/api/package/%s/%s' % (publisher, package)
     bitstore_url = '/api/auth/bitstore_upload'
     finalize_url = '/api/package/%s/%s/finalize' % (publisher, package)
-    test_data_package = {'name': 'test_package'}
+    test_data_package = {'name':'test_package'}
 
     def setUp(self):
         self.app = create_app()
@@ -563,8 +552,8 @@ class EndToEndTestCase(unittest.TestCase):
             db.drop_all()
             db.create_all()
             self.user = User()
-            self.user.id = 1
-            self.user.email, self.user.name, self.user.secret = \
+            self.user.user_id = 'trial_id'
+            self.user.email, self.user.user_name, self.user.secret = \
                 'test@test.com', 'test_publisher', 'super_secret'
             db.session.add(self.user)
             db.session.commit()
@@ -603,11 +592,9 @@ class EndToEndTestCase(unittest.TestCase):
         # Adding to Meta Data
         descriptor = {'name': 'test description'}
         with self.app.app_context():
-            publisher = Publisher(name=self.publisher)
-            metadata = MetaDataDB(name=self.package)
-            publisher.packages.append(metadata)
+            metadata = MetaDataDB(self.package, self.publisher)
             metadata.descriptor = json.dumps(descriptor)
-            db.session.add(publisher)
+            db.session.add(metadata)
             db.session.commit()
         rv = self.client.get('/api/package/%s' % (self.publisher,))
         data = json.loads(rv.data)

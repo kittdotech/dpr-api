@@ -11,10 +11,10 @@ import unittest
 import json
 from app import create_app
 from app.database import db
-from app.mod_api.models import BitStore, MetaDataDB, User, Publisher, PublisherUser
+from app.mod_api.models import BitStore, MetaDataDB, User
 
 
-class BitStoreTestCase(unittest.TestCase):
+class MetadataS3TestCase(unittest.TestCase):
 
     def setUp(self):
         self.app = create_app()
@@ -153,73 +153,51 @@ class MetaDataDBTestCase(unittest.TestCase):
         with self.app.test_request_context():
             db.drop_all()
             db.create_all()
-
-            user1 = User(name=self.publisher_one)
-            publisher1 = Publisher(name=self.publisher_one)
-            association1 = PublisherUser(role="OWNER")
-            association1.publisher = publisher1
-            user1.publishers.append(association1)
-
-            user2 = User(name=self.publisher_two)
-            publisher2 = Publisher(name=self.publisher_two)
-            association2 = PublisherUser(role="OWNER")
-            association2.publisher = publisher2
-            user2.publishers.append(association2)
-
-            metadata1 = MetaDataDB(name=self.package_one)
+            metadata1 = MetaDataDB(self.package_one, self.publisher_one)
             metadata1.descriptor = json.dumps(dict(name='test_one'))
-            publisher1.packages.append(metadata1)
+            db.session.add(metadata1)
 
-            metadata2 = MetaDataDB(name=self.package_two)
+            metadata2 = MetaDataDB(self.package_two, self.publisher_one)
             metadata2.descriptor = json.dumps(dict(name='test_two'))
-            publisher1.packages.append(metadata2)
+            db.session.add(metadata2)
 
-            metadata3 = MetaDataDB(name=self.package_one)
+            metadata3 = MetaDataDB(self.package_one, self.publisher_two)
             metadata3.descriptor = json.dumps(dict(name='test_three'))
-            publisher2.packages.append(metadata3)
+            db.session.add(metadata3)
 
-            metadata4 = MetaDataDB(name=self.package_two)
+            metadata4 = MetaDataDB(self.package_two, self.publisher_two)
             metadata4.descriptor = json.dumps(dict(name='test_four'))
-            publisher2.packages.append(metadata4)
-
-            db.session.add(user1)
-            db.session.add(user2)
+            db.session.add(metadata4)
 
             db.session.commit()
 
     def test_composite_key(self):
-        res = MetaDataDB.query.join(Publisher).filter(Publisher.name ==
-                                                      self.publisher_one).all()
+        res = MetaDataDB.query.filter_by(publisher=self.publisher_one).all()
         self.assertEqual(2, len(res))
 
     def test_update_fields_if_instance_present(self):
-        metadata = MetaDataDB.query.join(Publisher)\
-            .filter(Publisher.name == self.publisher_one,
-                    MetaDataDB.name == self.package_one).one()
+        metadata = MetaDataDB.query.filter_by(publisher=self.publisher_one,
+                                              name=self.package_one).one()
         self.assertEqual(json.loads(metadata.descriptor)['name'], "test_one")
         MetaDataDB.create_or_update(self.package_one, self.publisher_one,
                                     descriptor=json.dumps(dict(name='sub')),
                                     private=True)
-        metadata = MetaDataDB.query.join(Publisher) \
-            .filter(Publisher.name == self.publisher_one,
-                    MetaDataDB.name == self.package_one).one()
+        metadata = MetaDataDB.query.filter_by(publisher=self.publisher_one,
+                                              name=self.package_one).one()
         self.assertEqual(json.loads(metadata.descriptor)['name'], "sub")
         self.assertEqual(metadata.private, True)
 
     def test_insert_if_not_present(self):
-        pub = self.publisher_two
+        pub = "custom_pub"
         name = "custom_name"
-
-        metadata = MetaDataDB.query.join(Publisher) \
-            .filter(Publisher.name == pub,
-                    MetaDataDB.name == name).all()
+        metadata = MetaDataDB.query.filter_by(publisher=pub,
+                                              name=name).all()
         self.assertEqual(len(metadata), 0)
         MetaDataDB.create_or_update(name, pub,
                                     descriptor=json.dumps(dict(name='sub')),
                                     private=True)
-        metadata = MetaDataDB.query.join(Publisher) \
-            .filter(Publisher.name == pub,
-                    MetaDataDB.name == name).all()
+        metadata = MetaDataDB.query.filter_by(publisher=pub,
+                                              name=name).all()
         self.assertEqual(len(metadata), 1)
 
     def tearDown(self):
@@ -236,24 +214,14 @@ class UserTestCase(unittest.TestCase):
         with self.app.test_request_context():
             db.drop_all()
             db.create_all()
-
-            user = User(name='test_user_id')
-            publisher = Publisher(name='test_pub_id')
-            association = PublisherUser(role="OWNER")
-            association.publisher = publisher
-            user.publishers.append(association)
-
+            user = User()
+            user.user_id = 'test_user_id'
             db.session.add(user)
             db.session.commit()
 
     def test_serialize(self):
-        user = User.query.filter_by(name='test_user_id').one().serialize
-        self.assertEqual('test_user_id', user['name'])
-
-    def test_user_role_on_publisher(self):
-        user = User.query.filter_by(name='test_user_id').one()
-        self.assertEqual(len(user.publishers), 1)
-        self.assertEqual(user.publishers[0].role, 'OWNER')
+        user = User.query.filter_by(user_id='test_user_id').one().serialize
+        self.assertEqual('test_user_id', user['user_id'])
 
     def tearDown(self):
         with self.app.app_context():

@@ -6,15 +6,12 @@ from __future__ import unicode_literals
 
 import json
 import os
-import datetime
+
 from botocore.exceptions import ClientError, ParamValidationError
-from sqlalchemy import ForeignKey
 from sqlalchemy import UniqueConstraint
 
 from sqlalchemy.dialects.postgresql import JSON
 from flask import current_app as app
-from sqlalchemy.orm import relationship
-
 from app.database import db
 
 
@@ -98,60 +95,35 @@ class BitStore(object):
         return url
 
 
-class Publisher(db.Model):
-    __tablename__ = 'publisher'
-
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    name = db.Column(db.TEXT, unique=True, index=True, nullable=False)
-    title = db.Column(db.Text)
-
-    packages = relationship("MetaDataDB", back_populates="publisher")
-
-    users = relationship("PublisherUser", back_populates="publisher")
-
-
 class User(db.Model):
 
     __tablename__ = 'user'
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    email = db.Column(db.TEXT, index=True)
-    secret = db.Column(db.TEXT)
-    name = db.Column(db.TEXT, unique=True, index=True, nullable=False)
-    full_name = db.Column(db.TEXT)
-    auth0_id = db.Column(db.TEXT, index=True)
-
-    publishers = relationship("PublisherUser", back_populates="user")
+    user_id = db.Column(db.String(64), primary_key=True)
+    email = db.Column(db.String(128), index=True)
+    secret = db.Column(db.String(64))
+    user_name = db.Column(db.String(64))
 
     @property
     def serialize(self):
         """Return object data in easily serializeable format"""
         return {
-            'full_name': self.full_name,
+            'user_id': self.user_id,
             'email': self.email,
-            'name': self.name,
+            'name': self.user_name,
             'secret': self.secret
         }
 
     @staticmethod
     def create_or_update_user_from_callback(user_info):
-        auth0_id = user_info['user_id']
-        user = User.query.filter_by(auth0_id=auth0_id).first()
+        user_id = user_info['user_id']
+        user = User.query.filter_by(user_id=user_id).first()
         if user is None:
             user = User()
             user.email = user_info['email']
             user.secret = os.urandom(24).encode('hex')
             user.user_id = user_info['user_id']
             user.user_name = user_info['username']
-            user.auth0_id = auth0_id
-
-            publisher = Publisher(name=user.user_name)
-            association = PublisherUser(role="OWNER")
-            association.publisher = publisher
-            user.publishers.append(association)
-
             db.session.add(user)
             db.session.commit()
         elif user.secret == 'supersecret':
@@ -162,53 +134,38 @@ class User(db.Model):
 
     @staticmethod
     def get_userinfo_by_id(user_id):
-        user = User.query.filter_by(id=user_id).first()
+        user = User.query.filter_by(user_id=user_id).first()
         if user:
             return user
         return None
 
 
-class PublisherUser(db.Model):
-    __tablename__ = 'publisher_user'
-
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    user_id = db.Column(db.Integer, ForeignKey('user.id'), primary_key=True)
-    publisher_id = db.Column(db.Integer, ForeignKey('publisher.id'), primary_key=True)
-
-    role = db.Column(db.TEXT, nullable=False)
-
-    publisher = relationship("Publisher", back_populates="users")
-    user = relationship("User", back_populates="publishers")
-
-
 class MetaDataDB(db.Model):
-    __tablename__ = "package"
+    __tablename__ = "packages"
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    name = db.Column(db.TEXT, index=True)
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64))
+    publisher = db.Column(db.String(64))
     descriptor = db.Column(JSON)
-    status = db.Column(db.TEXT, index=True)
+    status = db.Column(db.String(16))
     private = db.Column(db.Boolean)
     readme = db.Column(db.TEXT)
 
-    publisher_id = db.Column(db.Integer, ForeignKey('publisher.id'))
-    publisher = relationship("Publisher", back_populates="packages")
-
     __table_args__ = (
-        UniqueConstraint("name", "publisher_id"),
+        UniqueConstraint("name", "publisher"),
     )
 
+    def __init__(self, name, publisher):
+        self.name = name
+        self.publisher = publisher
+
     @staticmethod
-    def create_or_update(name, publisher_name, **kwargs):
-        pub_id = Publisher.query.filter_by(name=publisher_name).one().id
-        instance = MetaDataDB.query.join(Publisher)\
-            .filter(MetaDataDB.name == name,
-                    Publisher.name == publisher_name).first()
+    def create_or_update(name, publisher, **kwargs):
+        instance = MetaDataDB.query.filter_by(name=name,
+                                              publisher=publisher).first()
         if not instance:
-            instance = MetaDataDB(name=name)
-            instance.publisher_id = pub_id
+            instance = MetaDataDB(name, publisher)
+
         for key, value in kwargs.items():
             setattr(instance, key, value)
         db.session.add(instance)
